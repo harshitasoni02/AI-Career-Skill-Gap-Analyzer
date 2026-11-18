@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Resume Upload — Backend Test Page</title>
+  <style>
+    /* Simple, clean styling — this page is temporary, the real
+       React interface comes later. */
+    body  { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f4f8; margin: 0; padding: 40px; }
+    .card { max-width: 700px; margin: 0 auto; background: white; border-radius: 12px;
+            padding: 30px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
+    h1    { margin-top: 0; color: #1a365d; }
+    h2    { color: #1a365d; margin-bottom: 8px; }
+    .note { color: #64748b; font-size: 13px; }
+    button { background: #2563eb; color: white; border: none; padding: 10px 20px;
+             border-radius: 8px; font-size: 15px; cursor: pointer; }
+    button:hover:not(:disabled) { background: #1d4ed8; }
+    button:disabled { background: #94a3b8; cursor: wait; }
+    .chip { display: inline-block; background: #e0e9ff; color: #1e40af; padding: 6px 14px;
+            border-radius: 999px; margin: 4px; font-size: 13px; font-weight: 600; }
+    #evidence { background: #fefce8; border: 1px solid #fde047; border-radius: 8px;
+                padding: 12px 16px; font-size: 13px; margin-top: 16px; }
+    #evidence li { margin: 4px 0; color: #713f12; }
+    #result { background: #0f172a; color: #a5f3a5; padding: 16px; border-radius: 8px;
+              min-height: 60px; white-space: pre-wrap; font-family: Consolas, monospace;
+              font-size: 12px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>📄 Resume Upload Test</h1>
+    <p class="note">Temporary test page for the backend. The real React UI comes later!</p>
+
+    <p><input type="file" id="resumeFile" accept=".pdf"></p>
+    <button id="uploadBtn" onclick="uploadResume()">Upload &amp; Extract Skills</button>
+
+    <!-- Skills found will be shown here as chips -->
+    <div id="skillsPanel"></div>
+
+    <!-- Evidence: WHERE each skill was found -->
+    <div id="evidence" style="display:none"></div>
+
+    <!-- The raw JSON reply, for learning what the server sends -->
+    <pre id="result">Result will appear here…</pre>
+  </div>
+
+  <script>
+    async function uploadResume() {
+      const fileInput = document.getElementById("resumeFile");
+      const resultBox = document.getElementById("result");
+      const skillsPanel = document.getElementById("skillsPanel");
+      const evidenceBox = document.getElementById("evidence");
+      const button = document.getElementById("uploadBtn");
+
+      // Clear the previous results.
+      skillsPanel.innerHTML = "";
+      evidenceBox.style.display = "none";
+      evidenceBox.innerHTML = "";
+
+      // 1) Make sure a file was chosen.
+      if (fileInput.files.length === 0) {
+        resultBox.textContent = "⚠️ Please choose a PDF file first!";
+        return;
+      }
+
+      // 2) Pack the file into a "FormData" parcel — this is how files
+      //    are wrapped up to be sent over the web.
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+
+      // 3) Send the parcel to our Flask route using "fetch".
+      button.disabled = true;
+      resultBox.textContent = "Uploading…";
+      try {
+        const response = await fetch("http://127.0.0.1:5000/api/upload-resume", {
+          method: "POST",
+          body: formData
+        });
+        const data = await response.json();
+
+        // 4) If it worked and skills were found, show them nicely.
+        if (data.success && data.skills_found) {
+          // 4a) Skill chips, with the category as hover tooltip.
+          let chipsHtml = "<h2>🎯 Skills found: " + data.skills_count + "</h2>";
+          for (const skill of data.skills_found) {
+            chipsHtml += '<span class="chip" title="Category: ' + skill.category + '">' +
+                         skill.name + "</span>";
+          }
+          skillsPanel.innerHTML = chipsHtml;
+
+          // 4b) Evidence list — WHICH line of the resume proved each skill.
+          let evidenceHtml = "<h2>🔎 Evidence (where each skill was found)</h2><ul>";
+          for (const skill of data.skills_found) {
+            evidenceHtml += "<li><b>" + skill.name + "</b> — found in: “" +
+                            skill.evidence + "”</li>";
+          }
+          evidenceHtml += "</ul>";
+          evidenceBox.innerHTML = evidenceHtml;
+          evidenceBox.style.display = "block";
+        }
+
+        // 5) Always also show the raw JSON — it helps us learn what
+        //    the server actually sends back.
+        resultBox.textContent = JSON.stringify(data, null, 2);
+      } catch (err) {
+        resultBox.textContent = "❌ Could not reach the server. Is app.py running?\n\n" + err;
+      }
+      button.disabled = false;
+    }
+  </script>
+</body>
+</html>
