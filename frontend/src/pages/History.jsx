@@ -32,9 +32,14 @@ export default function History() {
   }
 
   return (
-    <div className="container">
-      <h1 className="page-title">🗂️ My saved analyses</h1>
-      <p className="subtitle">Everything you saved, newest first. Open a record to see its details.</p>
+    <div>
+      <div className="page-head">
+        <div>
+          <span className="home-kicker">Records</span>
+          <h1 className="page-title">🗂️ My saved analyses</h1>
+          <p className="subtitle">Everything you saved, newest first. Open a record to see its details.</p>
+        </div>
+      </div>
 
       {analyses.length === 0 && (
         <div className="section">Nothing saved yet. Run an analysis and press “Save”!</div>

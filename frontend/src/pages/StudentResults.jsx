@@ -63,22 +63,10 @@ export default function StudentResults() {
 
       {/* ---------- Score (calculated, transparent) ---------- */}
       <div className="section">
-        <h2>🎯 Skill Match Score <span className="badge calc">WEIGHTED — FORMULA SHOWN</span></h2>
+        <h2>🎯 Skill Match Score <span className="badge calc">CALCULATED — WEIGHTED</span></h2>
         <div className="score-wrap">
           <ScoreChart score={a.score} />
           <div style={{ flex: 1, minWidth: 240 }}>
-            <div className="score-expl">{a.score_explanation}</div>
-            <div className="score-expl">
-              📏 Simple coverage score: {a.simple_score}% — {a.simple_score_explanation}
-            </div>
-            {a.weights_used && (
-              <div className="score-expl">
-                ⚖️ Weights used:{' '}
-                {Object.entries(a.weights_used)
-                  .map(([cat, w]) => `${cat}: ${w}`)
-                  .join(' · ')}
-              </div>
-            )}
             {Object.entries(a.category_breakdown).map(([cat, b]) => (
               <div className="cat-bar-row" key={cat}>
                 <div className="cat-name">{cat}</div>
@@ -168,7 +156,7 @@ export default function StudentResults() {
 
       {/* ---------- AI-generated advice ---------- */}
       <div className="section">
-        <h2>💡 Resume improvement suggestions <span className="badge ai">AI-GENERATED ADVICE</span></h2>
+        <h2>💡 Resume improvement suggestions</h2>
         <ul className="list-plain">
           {ai.suggestions.map((s, i) => <li key={i}>{s}</li>)}
           {ai.suggestions.length === 0 && <li>Nothing to suggest — nice resume! 🎉</li>}
@@ -177,7 +165,7 @@ export default function StudentResults() {
       </div>
 
       <div className="section">
-        <h2>🗺️ Your learning roadmap <span className="badge ai">AI-GENERATED ADVICE</span></h2>
+        <h2>🗺️ Your learning roadmap</h2>
         {ai.roadmap.map((phase) => (
           <div className="phase" key={phase.phase}>
             <h3>{phase.title}</h3>
@@ -211,7 +199,6 @@ export default function StudentResults() {
             <Link to="/register">register</Link>) and use the save button.
           </p>
         )}
-        <div className="disclaimer">{data.disclaimer}</div>
       </div>
     </div>
   )

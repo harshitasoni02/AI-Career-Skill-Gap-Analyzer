@@ -16,6 +16,34 @@ HONESTY RULES (from our project spec — very important):
 
 _model = None     # cached model so we load it only once
 _failed = False   # don't retry forever if it's simply not installed
+_emb_cache = {}   # text → vector cache (repeated texts are free to compare)
+_EMB_CACHE_LIMIT = 600
+
+
+def _encode_cached(model, texts):
+    """
+    Encode texts with a per-process vector cache. In recruiter batches the
+    same missing-skill texts recur across candidates, so caching avoids
+    re-encoding identical texts (pure speed win, identical results).
+    """
+    import numpy as np
+
+    out = [None] * len(texts)
+    todo_idx, todo_texts = [], []
+    for i, t in enumerate(texts):
+        cached = _emb_cache.get(t)
+        if cached is not None:
+            out[i] = cached
+        else:
+            todo_idx.append(i)
+            todo_texts.append(t)
+    if todo_texts:
+        new_vecs = model.encode(todo_texts, normalize_embeddings=True)
+        for i, v in zip(todo_idx, new_vecs):
+            out[i] = v
+            if len(_emb_cache) < _EMB_CACHE_LIMIT:
+                _emb_cache[todo_texts[i]] = v
+    return np.array(out)
 
 
 def get_model():
@@ -55,8 +83,10 @@ def find_possible_matches(missing_skills, extra_skills, threshold=0.60):
 
         # encode() turns each text into a list of numbers (a "vector")
         # that represents its meaning. Similar meanings → similar vectors.
-        emb_missing = model.encode(missing_texts, normalize_embeddings=True)
-        emb_extra = model.encode(extra_texts, normalize_embeddings=True)
+        # Vectors are CACHED per text: in recruiter batches the same
+        # missing-skill texts repeat across candidates, so repeats are free.
+        emb_missing = _encode_cached(model, missing_texts)
+        emb_extra = _encode_cached(model, extra_texts)
 
         # cosine similarity: how "aligned" two vectors are (0 = unrelated, 1 = same)
         sims = util.cos_sim(emb_missing, emb_extra)

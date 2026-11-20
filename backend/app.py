@@ -28,6 +28,7 @@ RESPONSE DESIGN (important for trust):
   "ai_generated" → advice produced by our rules (opinions, NOT facts)
 """
 
+import json
 import os
 import time
 
@@ -88,7 +89,7 @@ with app.app_context():
 def upload_too_large(_error):
     return jsonify({
         "success": False,
-        "error": "Upload too large (max 20 MB in total). Please upload smaller PDFs."
+        "error": "Upload too large (max 200 MB in total). Please upload smaller PDFs."
     }), 413
 
 
@@ -139,6 +140,10 @@ with app.app_context():
 # Shared helpers
 # ---------------------------------------------------------------
 
+_save_seq = {"n": 0}   # makes every stored filename unique, even when
+                       # several resumes arrive within the same millisecond
+
+
 def _validate_and_save_pdf(file):
     """
     Check an uploaded file is a sensible PDF and store it safely.
@@ -152,7 +157,8 @@ def _validate_and_save_pdf(file):
     original_name = file.filename
     safe_name = secure_filename(original_name)
     # Timestamp prefix → uploading twice never overwrites an old file.
-    stored_name = f"{int(time.time())}_{safe_name}"
+    _save_seq["n"] += 1
+    stored_name = f"{int(time.time() * 1000)}_{_save_seq['n']}_{safe_name}"
     save_path = os.path.join(app.config["UPLOAD_FOLDER"], stored_name)
     file.save(save_path)
     return original_name, stored_name, save_path
@@ -250,30 +256,47 @@ def status():
 # ---------------------------------------------------------------
 
 def _analyze_single_resume(text, jd_text, job_title):
-    """The shared brain used by BOTH the student and recruiter modules."""
+    """The shared brain used by BOTH the student and recruiter modules.
+    Every stage is timed (returned as `perf`) so bottlenecks are visible."""
+    perf = {}
+    t0 = time.perf_counter()
     resume_skills = extract_skills(text)["skills_found"]
+    perf["resume_skills_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+
+    t0 = time.perf_counter()
     jd_skills = extract_skills(jd_text)["skills_found"]
+    perf["jd_skills_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+
+    t0 = time.perf_counter()
     match = analyze_match(resume_skills, jd_skills)
+    perf["match_ms"] = round((time.perf_counter() - t0) * 1000, 1)
 
     # Semantic "possible matches" (only if the model is available).
     possible = []
     if SEMANTIC_ENABLED:
+        t0 = time.perf_counter()
         possible = semantic_matcher.find_possible_matches(
             match["missing"], match["extra"], SEMANTIC_THRESHOLD
         )
+        perf["semantic_ms"] = round((time.perf_counter() - t0) * 1000, 1)
 
     # spaCy: possible EXTRA requirements in the JD that our dictionary
     # does not cover. Clearly labeled AI-detected; never changes scores.
     ai_detected_jd_terms = []
     if NLP_ENABLED:
+        t0 = time.perf_counter()
         ai_detected_jd_terms = nlp_analyzer.analyze_job_description(
             jd_text, [s["name"] for s in jd_skills]
         )
+        perf["spacy_ms"] = round((time.perf_counter() - t0) * 1000, 1)
 
+    t0 = time.perf_counter()
     resume_info = parse_resume_info(text)
     resume_sections = extract_sections(text)
     suggestions = generate_suggestions(match, resume_info, text)
     roadmap = generate_roadmap(match["missing"])
+    perf["parse_suggest_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+    perf["total_ms"] = round(sum(perf.values()), 1)
 
     return {
         "extracted": {
@@ -289,6 +312,7 @@ def _analyze_single_resume(text, jd_text, job_title):
         "ai_detected_jd_terms": ai_detected_jd_terms,
         "job_title": job_title or "Untitled role",
         "jd_skills_count": len(jd_skills),
+        "perf": perf,
     }
 
 
@@ -350,11 +374,20 @@ def analyze_resume():
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400
     try:
+        t0 = time.perf_counter()
         text, page_count = _read_pdf_text(save_path)
+        pdf_ms = round((time.perf_counter() - t0) * 1000, 1)
     except Exception as e:
         return jsonify({"success": False, "error": f"Could not read the PDF: {e}"}), 400
 
     result = _analyze_single_resume(text, jd, job_title)
+    result["perf"]["pdf_ms"] = pdf_ms
+    print(f"[perf] analyze: {json.dumps(result["perf"])}", flush=True)
+    layout_name = extract_name_from_pdf(save_path)
+    if layout_name:
+        result["extracted"]["resume_info"]["name"] = layout_name
+        result["extracted"]["resume_info"]["name_note"] = (
+            "Detected from the largest text on the resume — please verify.")
     result["extracted"]["pages"] = page_count
     result["extracted"]["characters"] = len(text)
     result["extracted"]["filename"] = original_name
@@ -398,6 +431,8 @@ def analyze_resume():
             "suggestions": result["suggestions"],
             "roadmap": result["roadmap"],
         },
+        # Transparency: per-stage processing times (milliseconds).
+        "perf": result.get("perf", {}),
         "disclaimer": ("This analysis supports human review. It does not "
                        "guarantee employment or selection."),
     })
@@ -788,4 +823,18 @@ def my_analyses():
 # ---------------------------------------------------------------
 
 if __name__ == "__main__":
+    # PERFORMANCE FIX: both AI models used to load lazily inside the
+    # FIRST analysis request (measured: ~15 seconds on a cold start!).
+    # We now preload them BEFORE the server accepts traffic, so every
+    # analysis stays fast. The debug reloader spawns a watcher process
+    # (WERKZEUG_RUN_MAIN unset) and the real server process (set to
+    # "true") — we only preload in the real server process.
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        t0 = time.perf_counter()
+        if SEMANTIC_ENABLED:
+            semantic_matcher.get_model()
+        if NLP_ENABLED:
+            nlp_analyzer.get_nlp()
+        print(f"* AI models preloaded in {time.perf_counter() - t0:.1f}s — "
+              "first analysis will be fast.")
     app.run(debug=True, port=5000)

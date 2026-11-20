@@ -91,6 +91,7 @@ export default function RecruiterResults() {
         <h2>🏆 Ranked candidates <span className="badge calc">RANKED — FORMULA SHOWN</span></h2>
         <p className="note">{data.ranking_explanation}</p>
 
+        <div style={{ overflowX: 'auto' }}>
         <table className="rtable">
           <thead>
             <tr>
@@ -150,6 +151,7 @@ export default function RecruiterResults() {
             ))}
           </tbody>
         </table>
+        </div>
 
         {data.errors.length > 0 && (
           <div className="error-box" style={{ marginTop: 12 }}>
@@ -169,7 +171,6 @@ export default function RecruiterResults() {
             Want to keep this report? <Link to="/login">Log in</Link> first, then save.
           </p>
         )}
-        <div className="disclaimer">{data.disclaimer}</div>
       </div>
     </div>
   )

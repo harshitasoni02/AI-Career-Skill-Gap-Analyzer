@@ -265,15 +265,20 @@ check("ZIVA replies when configured (LLM call)",
       z.status_code == 200 and zd.get("success") and len(zd.get("reply", "")) > 20,
       f"status={z.status_code} resp={str(zd)[:120]}")
 
-print("(rate-limit check: sending 15 rapid messages…)")
-limited = None
-for i in range(16):
-    zz = s().post(f"{BASE}/api/ziva/chat", json={"message": "hi"}, timeout=90)
-    if zz.status_code == 429:
-        limited = i + 1
-        break
-check("rate limiter kicks in (429 after burst)", limited is not None,
-      f"triggered at message {limited}" if limited else "never triggered")
+print("(rate-limit check: firing 18 concurrent messages…)")
+import concurrent.futures
+
+def _ziva_ping(i):
+    try:
+        return s().post(f"{BASE}/api/ziva/chat", json={"message": "hi"}, timeout=90).status_code
+    except Exception:
+        return 0
+
+with concurrent.futures.ThreadPoolExecutor(max_workers=18) as pool:
+    codes = list(pool.map(_ziva_ping, range(18)))
+limited = codes.count(429)
+check("rate limiter kicks in (429 after burst)", limited > 0,
+      f"429s={limited}, other codes={sorted(set(c for c in codes if c != 429))}")
 
 print()
 print("=" * 60)

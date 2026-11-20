@@ -14,6 +14,64 @@ clearly distinguish extracted info from guesses/AI output.
 
 import re
 
+import pymupdf
+
+# Words that are NEVER a person's name (page headings etc.).
+_NAME_BLACKLIST = {
+    "resume", "curriculum vitae", "cv", "profile", "resumé",
+}
+
+
+def extract_name_from_pdf(path):
+    """
+    BETTER NAME DETECTION (Phase: recruiter accuracy):
+    On virtually every resume, the LARGEST text near the top of the first
+    page is the candidate's name. We read the PDF's font metadata and pick
+    the biggest qualifying line. Falls back to None if nothing qualifies —
+    the caller then uses the text-based heuristic instead.
+    """
+    try:
+        doc = pymupdf.open(path)
+        page = doc[0]                      # names live on page one
+        data = page.get_text("dict")
+        doc.close()
+
+        best_text, best_size, best_y = None, 0, 10**9
+        for block in data.get("blocks", []):
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    raw = (span.get("text") or "").strip()
+                    size = span.get("size", 0)
+                    y = span.get("bbox", [0, 0, 0, 0])[1]
+
+                    if len(raw) < 3 or len(raw) > 40:
+                        continue
+                    if y > 250:            # names sit at the top of page 1
+                        continue
+                    letter_ratio = sum(
+                        ch.isalpha() or ch.isspace() for ch in raw
+                    ) / len(raw)
+                    if letter_ratio < 0.7:
+                        continue
+                    if raw.lower() in _NAME_BLACKLIST:
+                        continue
+                    if any(ch.isdigit() for ch in raw):
+                        continue
+
+                    # Prefer bigger font; on a tie, prefer higher on the page.
+                    if size > best_size + 0.5 or (
+                        abs(size - best_size) <= 0.5 and y < best_y
+                    ):
+                        best_size = size
+                        best_y = y
+                        best_text = raw
+
+        if best_text:
+            return best_text.title() if best_text.isupper() else best_text
+        return None
+    except Exception:
+        return None
+
 # Regexes = text patterns. Each one describes the SHAPE of the thing we want.
 EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 PHONE_RE = re.compile(r"(\+?\d[\d\s\-()]{8,15}\d)")
