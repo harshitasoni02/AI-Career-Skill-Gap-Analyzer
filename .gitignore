@@ -1,0 +1,35 @@
+# Secrets
+backend/.env
+*.pem
+*.key
+
+# Python
+backend/.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Runtime data (personal résumés and local database)
+backend/uploads/*
+!backend/uploads/.gitkeep
+backend/skill_analyzer.db
+backend/skill_analyzer.db-journal
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Local review artifacts
+design-review/
+design-review-3d/
+design-review-3d-fix/
+ziva-review/
+gui-test-screenshots/
+*.zip
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
